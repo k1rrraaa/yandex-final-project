@@ -1,0 +1,11 @@
+model_name: resnet_like
+input_size: [224, 224]
+batch_size: 32
+epochs: 30
+lr: 0.001
+optimizer: adamw
+scheduler: cosine
+augmentations:
+  horizontal_flip: true
+  random_crop: true
+  color_jitter: true
