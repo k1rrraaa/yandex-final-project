@@ -7,10 +7,10 @@ notebooks/checkpoints/
 best_models/
 *.pth
 
-# ✅ Weights & Biases (если в notebooks/wandb)
+# ✅ Weights & Biases
 notebooks/wandb/
 
-# ✅ Сабмиты (если генерируются автоматически)
+# ✅ Сабмиты
 submissions/*.csv
 
 # ✅ Python cache
