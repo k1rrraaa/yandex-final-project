@@ -1,9 +1,28 @@
-data/
-experiments/
-*.pth
-*.ckpt
-*.log
-__pycache__/
+# ✅ Jupyter артефакты
 .ipynb_checkpoints/
+notebooks/**/.ipynb_checkpoints/
+
+# ✅ PyTorch чекпоинты и модели
+notebooks/checkpoints/
+best_models/
+*.pth
+
+# ✅ Weights & Biases (если в notebooks/wandb)
+notebooks/wandb/
+
+# ✅ Сабмиты (если генерируются автоматически)
+submissions/*.csv
+
+# ✅ Python cache
+__pycache__/
+*.py[cod]
+
+# ✅ IDE файлы
+.vscode/
 .idea/
+
+# ✅ Системные файлы macOS
 .DS_Store
+
+# ✅ Данные
+data/
