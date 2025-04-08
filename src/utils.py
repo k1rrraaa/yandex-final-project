@@ -165,21 +165,32 @@ def make_submission(model, test_loader, device, output_path="submission.csv"):
     all_preds = []
     all_ids = []
 
+    # Получаем index2label из оригинального датасета, даже если используется Subset
+    dataset = test_loader.dataset
+    if hasattr(dataset, 'dataset'):  # если используется Subset
+        dataset = dataset.dataset
+    index2label = getattr(dataset, 'index2label', None)
+
     with torch.no_grad():
         for images, ids in tqdm(test_loader, desc="Predicting"):
             images = images.to(device)
             logits = model(images)
             preds = torch.argmax(logits, dim=1).cpu().numpy()
+
             all_preds.extend(preds)
             all_ids.extend(ids)
 
     all_ids = [int(i) for i in all_ids]
+
+    if index2label is not None:
+        all_preds = [index2label[p] for p in all_preds]
 
     df = pd.DataFrame({
         'id': all_ids,
         'target_feature': all_preds
     })
 
-    df = df.sort_values("id")  #
+    df = df.sort_values("id")
     df.to_csv(output_path, index=False)
     print(f"✅ Submission saved to: {output_path}")
+
