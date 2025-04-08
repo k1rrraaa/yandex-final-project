@@ -1,37 +1,35 @@
 import os
-import pandas as pd
 from PIL import Image
 from torch.utils.data import Dataset
 
 class HumanPosesDataset(Dataset):
-    def __init__(self, root_dir, mode='train', transform=None, preload=False):
-        assert mode in ['train', 'test'], "mode must be 'train' or 'test'"
-        self.root_dir = root_dir
-        self.mode = mode
+    def __init__(self, data_df, img_dir, transform=None, preload=False, mode='train'):
+        self.data_df = data_df.reset_index(drop=True)
+        self.img_dir = img_dir
         self.transform = transform
         self.preload = preload
+        self.mode = mode
 
-        if mode == 'train':
-            self.data_df = pd.read_csv(os.path.join(root_dir, 'train_answers.csv'))
-            self.img_dir = os.path.join(root_dir, 'img_train')
+        self.image_ids = self.data_df['img_id'].values
+
+        if self.mode != 'test':
+            unique_labels = sorted(self.data_df['target_feature'].unique())
+            self.class_to_index = {label: idx for idx, label in enumerate(unique_labels)}
+            self.index_to_class = {v: k for k, v in self.class_to_index.items()}
+            self.labels = self.data_df['target_feature'].map(self.class_to_index).values
         else:
-            self.data_df = pd.read_csv(os.path.join(root_dir, 'test_dummy.csv'))
-            self.img_dir = os.path.join(root_dir, 'img_test')
+            self.class_to_index = None
+            self.index_to_class = None
+            self.labels = None
 
-        if mode == 'train':
-            self.image_ids = self.data_df['img_id'].values
-        else:
-            self.image_ids = self.data_df['id'].values
-
-        self.labels = self.data_df['target_feature'].values if mode == 'train' else None
-
-        self.preloaded_images = None
-        if preload:
+        if self.preload:
             print(f"Preloading {len(self.image_ids)} images into RAM...")
             self.preloaded_images = [
                 Image.open(os.path.join(self.img_dir, f"{img_id}.jpg")).convert("RGB")
                 for img_id in self.image_ids
             ]
+        else:
+            self.preloaded_images = None
 
     def __len__(self):
         return len(self.image_ids)
@@ -46,9 +44,8 @@ class HumanPosesDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        if self.mode == 'train':
-            label = self.labels[idx]
-            return image, label
+        if self.mode == 'test':
+            return image, self.image_ids[idx]
         else:
-            return image, self.image_ids[idx]  # test возвращает id
-
+            label = int(self.labels[idx])
+            return image, label
