@@ -21,6 +21,7 @@ class Trainer:
         use_wandb: bool = False,
         seed: int = 42,
         batch_augment_fn=None,
+        scaler = None,
     ):
         self.model = model
         self.train_loader = train_loader
@@ -37,6 +38,7 @@ class Trainer:
         self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.scaler = scaler
 
         from torch.optim.lr_scheduler import OneCycleLR
         self.step_scheduler_per_batch = isinstance(scheduler, OneCycleLR)
@@ -89,7 +91,8 @@ class Trainer:
                 self.model, self.optimizer, self.criterion,
                 self.train_loader, self.device, f"Train {epoch}",
                 batch_augment_fn=self.batch_augment_fn,
-                scheduler=self.scheduler if self.step_scheduler_per_batch else None
+                scheduler=self.scheduler if self.step_scheduler_per_batch else None,
+                scaler = self.scaler if self.scaler else None,
             )
 
             val_loss, val_f1 = validation_epoch(
