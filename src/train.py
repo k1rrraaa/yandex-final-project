@@ -32,9 +32,12 @@ def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
                     labels_for_f1 = labels
 
             scaler.scale(loss).backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
+
+            if is_onecycle and scheduler is not None:
+                scheduler.step()
 
         else:
             logits = model(images)
@@ -47,7 +50,7 @@ def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
                 labels_for_f1 = labels
 
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             if is_onecycle and scheduler is not None:

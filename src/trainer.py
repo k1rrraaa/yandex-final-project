@@ -108,11 +108,14 @@ class Trainer:
             self.history['train_f1'].append(train_f1)
             self.history['val_f1'].append(val_f1)
 
+            current_lr = self.optimizer.param_groups[0]['lr']
+
             metrics = {
                 'train/loss': train_loss,
                 'train/f1': train_f1,
                 'val/loss': val_loss,
                 'val/f1': val_f1,
+                'lr': current_lr,
                 'epoch': epoch
             }
 
