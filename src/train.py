@@ -1,15 +1,16 @@
 from tqdm import tqdm
 from sklearn.metrics import f1_score
 import torch
-#from torch.nn.utils import clip_grad_norm_
 from torch.amp import autocast
 
 
-
-def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc, batch_augment_fn=None, scheduler=None, scaler=None):
+def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
+                   batch_augment_fn=None, scheduler=None, scaler=None):
     model.train()
     train_loss = 0.0
     all_preds, all_labels = [], []
+
+    is_onecycle = isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR)
 
     for images, labels in tqdm(train_loader, desc=tqdm_desc):
         images, labels = images.to(device), labels.to(device)
@@ -31,9 +32,10 @@ def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
                     labels_for_f1 = labels
 
             scaler.scale(loss).backward()
-            # clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
+
         else:
             logits = model(images)
             if isinstance(labels, tuple) and len(labels) == 3:
@@ -45,11 +47,11 @@ def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
                 labels_for_f1 = labels
 
             loss.backward()
-            # clip_grad_norm_(model.parameters(), max_norm=1.0)
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-        if scheduler is not None:
-            scheduler.step()
+            if is_onecycle and scheduler is not None:
+                scheduler.step()
 
         train_loss += loss.item() * images.size(0)
         all_preds.append(logits.detach().argmax(dim=1).cpu())
