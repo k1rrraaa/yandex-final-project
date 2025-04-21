@@ -13,7 +13,6 @@ from PIL import Image, ImageOps
 from sklearn.metrics import f1_score, classification_report, confusion_matrix, precision_score, recall_score
 import pandas as pd
 from tqdm import tqdm
-from torchvision import transforms
 
 
 def set_seed(seed: int = 42):
@@ -253,5 +252,4 @@ def make_submission(model, test_loader, device, index_to_class, output_path="sub
     df = df.sort_values("id")
     df.to_csv(output_path, index=False)
     print(f"✅ Submission saved to: {output_path}")
-
 

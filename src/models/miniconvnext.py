@@ -1,3 +1,9 @@
+"""
+Original author: Facebook AI Research (FAIR).
+Reimplemented from scratch for the purpose of competition participation.
+This implementation does not use any pre-trained weights or external data.
+"""
+
 import torch
 import torch.nn as nn
 
@@ -7,9 +13,9 @@ class LayerNorm2d(nn.Module):
         self.norm = nn.LayerNorm(channels, eps=eps)
 
     def forward(self, x):
-        x = x.permute(0, 2, 3, 1)  # B, H, W, C
+        x = x.permute(0, 2, 3, 1)
         x = self.norm(x)
-        return x.permute(0, 3, 1, 2)  # B, C, H, W
+        return x.permute(0, 3, 1, 2)
 
 
 class ConvNeXtBlock(nn.Module):

@@ -1,3 +1,9 @@
+"""
+Original author: Microsoft Research.
+Reimplemented from scratch (5M parameter version) for the purpose of competition participation.
+This implementation does not use any pre-trained weights or external data.
+"""
+
 import torch
 import torch.nn as nn
 

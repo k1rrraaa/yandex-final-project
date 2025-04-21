@@ -32,7 +32,7 @@ def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
                     labels_for_f1 = labels
 
             scaler.scale(loss).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
 
@@ -50,7 +50,7 @@ def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
                 labels_for_f1 = labels
 
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             if is_onecycle and scheduler is not None:
@@ -61,7 +61,14 @@ def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
         all_labels.append(labels_for_f1.cpu())
 
     train_loss /= len(train_loader.dataset)
-    train_f1 = f1_score(torch.cat(all_labels), torch.cat(all_preds), average='macro')
+    y_true = torch.cat(all_labels)
+    y_pred = torch.cat(all_preds)
+
+    if y_true.ndim == 2:
+        y_true = torch.argmax(y_true, dim=1)
+
+    train_f1 = f1_score(y_true, y_pred, average='macro')
+
     return train_loss, train_f1
 
 
@@ -74,8 +81,9 @@ def validation_epoch(model, criterion, val_loader, device, tqdm_desc):
     for images, labels in tqdm(val_loader, desc=tqdm_desc):
         images, labels = images.to(device), labels.to(device)
 
-        logits = model(images)
-        loss = criterion(logits, labels)
+        with autocast(device_type='cuda'):
+            logits = model(images)
+            loss = criterion(logits, labels)
 
         val_loss += loss.item() * images.size(0)
         all_preds.append(logits.argmax(dim=1).cpu())
@@ -84,3 +92,4 @@ def validation_epoch(model, criterion, val_loader, device, tqdm_desc):
     val_loss /= len(val_loader.dataset)
     val_f1 = f1_score(torch.cat(all_labels), torch.cat(all_preds), average='macro')
     return val_loss, val_f1
+

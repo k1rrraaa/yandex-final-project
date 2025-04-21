@@ -3,7 +3,9 @@ from PIL import Image
 from torchvision import transforms
 import pandas as pd
 import torch
+import numpy as np
 from tqdm import tqdm
+
 
 class TestDataset(Dataset):
     def __init__(self, image_paths, ids):
@@ -44,8 +46,28 @@ tta_transforms = [
     ]),
 ]
 
+
+def apply_class_prior_correction(logits_tensor, train_labels):
+
+    class_counts = np.bincount(train_labels, minlength=logits_tensor.shape[1])
+    priors = class_counts / class_counts.sum()
+    log_priors = torch.log(torch.tensor(priors + 1e-6, dtype=torch.float32)).to(logits_tensor.device)
+
+    corrected_logits = logits_tensor - log_priors.unsqueeze(0)
+    probs = torch.softmax(corrected_logits, dim=1)
+    return probs
+
+
 @torch.no_grad()
-def make_submission_with_tta(model, test_loader, device, index_to_class, output_path="submission.csv"):
+def make_submission_with_tta(
+    model,
+    test_loader,
+    device,
+    index_to_class,
+    output_path="submission.csv",
+    use_class_prior_correction=False,
+    train_labels=None
+):
     model.eval()
     model.to(device)
 
@@ -57,13 +79,20 @@ def make_submission_with_tta(model, test_loader, device, index_to_class, output_
         batch_size = len(images)
         votes = torch.zeros((batch_size, NUM_CLASSES), device=device)
 
-        for t, transform in enumerate(tta_transforms):
+        for transform in tta_transforms:
             tta_batch = torch.stack([transform(img) for img in images]).to(device)
             logits = model(tta_batch)
             logits = logits[:, :NUM_CLASSES]
             votes += logits
 
-        preds = torch.argmax(votes, dim=1).cpu().numpy()
+        if use_class_prior_correction:
+            if train_labels is None:
+                raise ValueError("train_labels must be provided when using class prior correction.")
+            probs = apply_class_prior_correction(votes, train_labels)
+            preds = torch.argmax(probs, dim=1).cpu().numpy()
+        else:
+            preds = torch.argmax(votes, dim=1).cpu().numpy()
+
         all_preds.extend(preds)
         all_ids.extend(ids)
 
@@ -76,4 +105,4 @@ def make_submission_with_tta(model, test_loader, device, index_to_class, output_
     })
     df = df.sort_values("id")
     df.to_csv(output_path, index=False)
-    print(f"\u2705 Submission with TTA saved to: {output_path}")
+    print(f"✅ Submission with TTA saved to: {output_path}")

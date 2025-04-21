@@ -1,5 +1,3 @@
-# ssl_dataset.py
-
 from torchvision import transforms
 from torchvision.datasets.folder import default_loader
 from torch.utils.data import Dataset
