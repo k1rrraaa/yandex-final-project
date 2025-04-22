@@ -186,7 +186,7 @@
 📝 Обучение производилось в несколько этапов с изменениями scheduler и параметров аугментаций.  
 Подробности можно найти в [`ноутбуке`](notebooks/100_convnextv2small.ipynb).
 
-### 🧩 convnextv2_small
+### convnextv2_small
 
 **📁 Обучение:** [`100_convnextv2small.ipynb`](notebooks/100_convnextv2small.ipynb)  
 **🧱 Реализация:** [`src/models/convnextv2.py`](src/models/convnextv2.py)  
