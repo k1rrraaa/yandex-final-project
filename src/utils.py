@@ -3,16 +3,13 @@ import numpy as np
 import torch
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from IPython.display import display, HTML, clear_output
-import base64
-import io
+from IPython.display import clear_output
 import time
 import webbrowser
-import tempfile
 import os
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from PIL import Image, ImageOps
 from sklearn.metrics import f1_score, classification_report, confusion_matrix, precision_score, recall_score
 import pandas as pd
 from tqdm import tqdm
@@ -100,9 +97,13 @@ def show_confusion_matrix(y_true, y_pred, label_names=None):
 
 
 def evaluate_model(model, dataloader, device, label_names=None):
-    # Ensure label_names is list of strings if given as array of ints
+    if label_names is None and hasattr(dataloader.dataset, 'index_to_class'):
+        index_to_class = dataloader.dataset.index_to_class
+        label_names = [index_to_class[i] for i in range(len(index_to_class))]
+
     if label_names is not None:
         label_names = [str(label) for label in label_names]
+
     model.eval()
     all_preds, all_labels = [], []
 
@@ -157,8 +158,75 @@ def load_training_state(model, optimizer, scheduler, checkpoint_path, device='cp
     return model, optimizer, scheduler, checkpoint['epoch'] + 1, checkpoint['history'], checkpoint['best_f1']
 
 
+class MixupCutMixAugmenter:
+    def __init__(self, alpha=1.0, p_mixup=0.5):
+        self.alpha = alpha
+        self.p_mixup = p_mixup
+
+    def __call__(self, x, y):
+        if random.random() < self.p_mixup:
+            return self.mixup(x, y)
+        else:
+            return self.cutmix(x, y)
+
+    def mixup(self, x, y):
+        lam = np.random.beta(self.alpha, self.alpha)
+        batch_size = x.size(0)
+        index = torch.randperm(batch_size).to(x.device)
+
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+        return mixed_x, (y_a, y_b, lam)
+
+    def cutmix(self, x, y):
+        lam = np.random.beta(self.alpha, self.alpha)
+        batch_size, _, height, width = x.size()
+        index = torch.randperm(batch_size).to(x.device)
+
+        cut_rat = np.sqrt(1. - lam)
+        cut_w = int(width * cut_rat)
+        cut_h = int(height * cut_rat)
+
+        cx = random.randint(0, width)
+        cy = random.randint(0, height)
+
+        bbx1 = np.clip(cx - cut_w // 2, 0, width)
+        bby1 = np.clip(cy - cut_h // 2, 0, height)
+        bbx2 = np.clip(cx + cut_w // 2, 0, width)
+        bby2 = np.clip(cy + cut_h // 2, 0, height)
+
+        x[:, :, bby1:bby2, bbx1:bbx2] = x[index, :, bby1:bby2, bbx1:bbx2]
+        y_a, y_b = y, y[index]
+
+        return x, (y_a, y_b, lam)
+
+
+class ResizeWithAspectRatioPadding:
+    def __init__(self, size, fill=0):
+        self.size = size
+        self.fill = fill
+
+    def __call__(self, img):
+        if not isinstance(img, Image.Image):
+            raise TypeError(f"Expected PIL.Image, got {type(img)}")
+
+        w, h = img.size
+        scale = self.size / max(w, h)
+        new_w, new_h = int(w * scale), int(h * scale)
+
+        img = img.resize((new_w, new_h), Image.BILINEAR)
+
+        pad_w = self.size - new_w
+        pad_h = self.size - new_h
+
+        padding = (pad_w // 2, pad_h // 2, pad_w - pad_w // 2, pad_h - pad_h // 2)
+        img = ImageOps.expand(img, border=padding, fill=self.fill)
+
+        return img
+
+
 @torch.no_grad()
-def make_submission(model, test_loader, device, output_path="submission.csv"):
+def make_submission(model, test_loader, device, index_to_class, output_path="submission.csv"):
     model.eval()
     model.to(device)
 
@@ -181,13 +249,14 @@ def make_submission(model, test_loader, device, output_path="submission.csv"):
             all_ids.extend(ids)
 
     all_ids = [int(i) for i in all_ids]
+    decoded_preds = [index_to_class[int(p)] for p in all_preds]
 
     if index2label is not None:
         all_preds = [index2label[p] for p in all_preds]
 
     df = pd.DataFrame({
         'id': all_ids,
-        'target_feature': all_preds
+        'target_feature': decoded_preds
     })
 
     df = df.sort_values("id")

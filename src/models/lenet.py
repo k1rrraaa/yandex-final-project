@@ -1,3 +1,9 @@
+"""
+Original author: Yann LeCun and collaborators.
+Reimplemented from scratch for the purpose of competition participation.
+This implementation does not use any pre-trained weights or external data.
+"""
+
 import torch
 import torch.nn as nn
 
@@ -16,7 +22,7 @@ class LeNet(nn.Module):
         )
         
         self.classifier = nn.Sequential(
-            nn.Linear(16 * 53 * 53, 120),  # для входа 224x224
+            nn.Linear(16 * 53 * 53, 120),
             nn.ReLU(inplace=True),
             nn.Linear(120, 84),
             nn.ReLU(inplace=True),

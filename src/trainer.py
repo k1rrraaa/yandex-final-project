@@ -1,26 +1,27 @@
 import os
 import torch
 import wandb
-from tqdm import tqdm
-from typing import Optional, Dict, Any, List, Tuple
-from .utils import set_seed, plot_losses
-from .train import training_epoch, validation_epoch
+from src.utils import set_seed, plot_losses
+from src.train import training_epoch, validation_epoch
+
 
 class Trainer:
     def __init__(
-            self,
-            model,
-            train_loader,
-            val_loader,
-            num_epochs: int,
-            optimizer,
-            criterion,
-            scheduler=None,
-            device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
-            experiment_name: str = 'experiment',
-            save_dir: str = 'checkpoints',
-            use_wandb: bool = False,
-            seed: int = 42
+        self,
+        model,
+        train_loader,
+        val_loader,
+        num_epochs: int,
+        optimizer,
+        criterion,
+        scheduler=None,
+        device: str = 'cuda' if torch.cuda.is_available() else 'cpu',
+        experiment_name: str = 'experiment',
+        save_dir: str = 'checkpoints',
+        use_wandb: bool = False,
+        seed: int = 42,
+        batch_augment_fn=None,
+        scaler = None,
     ):
         self.model = model
         self.train_loader = train_loader
@@ -28,6 +29,7 @@ class Trainer:
         self.num_epochs = num_epochs
         self.device = torch.device(device)
         self.model.to(self.device)
+        self.batch_augment_fn = batch_augment_fn
 
         os.makedirs(save_dir, exist_ok=True)
         self.save_dir = save_dir
@@ -36,6 +38,10 @@ class Trainer:
         self.criterion = criterion
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.scaler = scaler
+
+        from torch.optim.lr_scheduler import OneCycleLR
+        self.step_scheduler_per_batch = isinstance(scheduler, OneCycleLR)
 
         self.best_f1 = 0.0
         self.best_epoch = 0
@@ -83,7 +89,10 @@ class Trainer:
 
             train_loss, train_f1 = training_epoch(
                 self.model, self.optimizer, self.criterion,
-                self.train_loader, self.device, f"Train {epoch}"
+                self.train_loader, self.device, f"Train {epoch}",
+                batch_augment_fn=self.batch_augment_fn,
+                scheduler=self.scheduler if self.step_scheduler_per_batch else None,
+                scaler = self.scaler if self.scaler else None,
             )
 
             val_loss, val_f1 = validation_epoch(
@@ -91,7 +100,7 @@ class Trainer:
                 self.val_loader, self.device, f"Val {epoch}"
             )
 
-            if self.scheduler is not None:
+            if self.scheduler is not None and not self.step_scheduler_per_batch:
                 self.scheduler.step()
 
             self.history['train_loss'].append(train_loss)
@@ -99,11 +108,14 @@ class Trainer:
             self.history['train_f1'].append(train_f1)
             self.history['val_f1'].append(val_f1)
 
+            current_lr = self.optimizer.param_groups[0]['lr']
+
             metrics = {
                 'train/loss': train_loss,
                 'train/f1': train_f1,
                 'val/loss': val_loss,
                 'val/f1': val_f1,
+                'lr': current_lr,
                 'epoch': epoch
             }
 

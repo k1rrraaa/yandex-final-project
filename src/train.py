@@ -1,27 +1,74 @@
 from tqdm import tqdm
 from sklearn.metrics import f1_score
 import torch
+from torch.amp import autocast
 
-def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc):
+
+def training_epoch(model, optimizer, criterion, train_loader, device, tqdm_desc,
+                   batch_augment_fn=None, scheduler=None, scaler=None):
     model.train()
     train_loss = 0.0
     all_preds, all_labels = [], []
 
+    is_onecycle = isinstance(scheduler, torch.optim.lr_scheduler.OneCycleLR)
+
     for images, labels in tqdm(train_loader, desc=tqdm_desc):
         images, labels = images.to(device), labels.to(device)
 
-        optimizer.zero_grad()
-        logits = model(images)
-        loss = criterion(logits, labels)
-        loss.backward()
-        optimizer.step()
+        if batch_augment_fn is not None:
+            images, labels = batch_augment_fn(images, labels)
 
-        train_loss += loss.item() * images.shape[0]
-        all_preds.append(logits.argmax(dim=1).cpu())
-        all_labels.append(labels.cpu())
+        optimizer.zero_grad()
+
+        if scaler is not None:
+            with autocast(device_type='cuda'):
+                logits = model(images)
+                if isinstance(labels, tuple) and len(labels) == 3:
+                    y_a, y_b, lam = labels
+                    loss = lam * criterion(logits, y_a) + (1 - lam) * criterion(logits, y_b)
+                    labels_for_f1 = y_a
+                else:
+                    loss = criterion(logits, labels)
+                    labels_for_f1 = labels
+
+            scaler.scale(loss).backward()
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+
+            if is_onecycle and scheduler is not None:
+                scheduler.step()
+
+        else:
+            logits = model(images)
+            if isinstance(labels, tuple) and len(labels) == 3:
+                y_a, y_b, lam = labels
+                loss = lam * criterion(logits, y_a) + (1 - lam) * criterion(logits, y_b)
+                labels_for_f1 = y_a
+            else:
+                loss = criterion(logits, labels)
+                labels_for_f1 = labels
+
+            loss.backward()
+            #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            if is_onecycle and scheduler is not None:
+                scheduler.step()
+
+        train_loss += loss.item() * images.size(0)
+        all_preds.append(logits.detach().argmax(dim=1).cpu())
+        all_labels.append(labels_for_f1.cpu())
 
     train_loss /= len(train_loader.dataset)
-    train_f1 = f1_score(torch.cat(all_labels), torch.cat(all_preds), average='macro')
+    y_true = torch.cat(all_labels)
+    y_pred = torch.cat(all_preds)
+
+    if y_true.ndim == 2:
+        y_true = torch.argmax(y_true, dim=1)
+
+    train_f1 = f1_score(y_true, y_pred, average='macro')
+
     return train_loss, train_f1
 
 
@@ -34,10 +81,11 @@ def validation_epoch(model, criterion, val_loader, device, tqdm_desc):
     for images, labels in tqdm(val_loader, desc=tqdm_desc):
         images, labels = images.to(device), labels.to(device)
 
-        logits = model(images)
-        loss = criterion(logits, labels)
+        with autocast(device_type='cuda'):
+            logits = model(images)
+            loss = criterion(logits, labels)
 
-        val_loss += loss.item() * images.shape[0]
+        val_loss += loss.item() * images.size(0)
         all_preds.append(logits.argmax(dim=1).cpu())
         all_labels.append(labels.cpu())
 
@@ -45,32 +93,3 @@ def validation_epoch(model, criterion, val_loader, device, tqdm_desc):
     val_f1 = f1_score(torch.cat(all_labels), torch.cat(all_preds), average='macro')
     return val_loss, val_f1
 
-
-def train_loop(model, train_loader, val_loader, optimizer, scheduler, criterion, device, num_epochs, save_path=None, plot_fn=None):
-    train_losses, val_losses, train_f1s, val_f1s = [], [], [], []
-    best_f1 = 0.0
-
-    for epoch in range(1, num_epochs + 1):
-        print(f"\nEpoch {epoch}/{num_epochs}")
-
-        train_loss, train_f1 = training_epoch(model, optimizer, criterion, train_loader, device, f"Train {epoch}")
-        val_loss, val_f1 = validation_epoch(model, criterion, val_loader, device, f"Val {epoch}")
-
-        if scheduler is not None:
-            scheduler.step()
-
-        if val_f1 > best_f1:
-            best_f1 = val_f1
-            if save_path is not None:
-                torch.save(model.state_dict(), save_path)
-
-        train_losses.append(train_loss)
-        val_losses.append(val_loss)
-        train_f1s.append(train_f1)
-        val_f1s.append(val_f1)
-
-        if plot_fn:
-            plot_fn(train_losses, val_losses, train_f1s, val_f1s)
-
-    print(f"Training completed. Best Val F1: {best_f1:.4f}")
-    return train_losses, val_losses, train_f1s, val_f1s
